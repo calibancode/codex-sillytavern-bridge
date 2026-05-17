@@ -42,6 +42,7 @@ export type OpenAiChatRequest = {
 export type NormalizedMessage = {
   role: ChatRole;
   content: NormalizedContentPart[];
+  name?: string;
 };
 
 export function normalizeChatRequest(body: unknown): { request: OpenAiChatRequest; messages: NormalizedMessage[] } {
@@ -107,6 +108,7 @@ function normalizeMessage(message: OpenAiChatMessage, index: number): Normalized
   return {
     role,
     content: normalizeContent(message.content, role, index),
+    ...(typeof message.name === "string" && message.name.trim() ? { name: message.name.trim() } : {}),
   };
 }
 

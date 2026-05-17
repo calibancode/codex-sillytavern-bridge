@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { chooseActiveTurn } from "../bridge/continue";
 import type { BridgeConfig } from "../bridge/config";
 import { isAgentMessageItem, shouldEmitAgentMessagePhase, type MessagePhase } from "../bridge/filters";
-import { messageText, messagesToResponseItems, normalizeChatRequest, userInput, type NormalizedMessage, type OpenAiChatRequest } from "../bridge/normalize";
+import { messagesToResponseItems, normalizeChatRequest, userInput, type OpenAiChatRequest } from "../bridge/normalize";
+import { preparePrompt } from "../bridge/prompt";
 import { BridgeHttpError } from "../openai/errors";
 import type { ChatCompletionResult } from "../openai/types";
 import { CodexRpc, type RpcNotification } from "./rpc";
@@ -633,24 +634,4 @@ function normalizeReasoningEffort(effort: string | null): string | null {
 
 function isReasoningSummary(value: string | null): value is string {
   return value === "auto" || value === "concise" || value === "detailed" || value === "none";
-}
-
-type PreparedPrompt = {
-  baseInstructions: string;
-  developerInstructions: string;
-  conversationMessages: NormalizedMessage[];
-};
-
-function preparePrompt(messages: NormalizedMessage[]): PreparedPrompt {
-  const systemPrompt = messages
-    .filter((message) => message.role === "system")
-    .map((message) => messageText(message).trim())
-    .filter(Boolean)
-    .join("\n\n");
-
-  return {
-    baseInstructions: systemPrompt,
-    developerInstructions: "",
-    conversationMessages: messages.filter((message) => message.role !== "system"),
-  };
 }

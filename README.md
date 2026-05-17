@@ -32,9 +32,17 @@ npm start -- --localhost
 
 In SillyTavern, use Chat Completion with a Custom OpenAI-compatible endpoint and point it at the bridge URL. Use prompt post-processing `none` for the first test.
 
+SillyTavern appends `/chat/completions` and `/models` to its Custom endpoint URL, so either of these base URLs works:
+
+```text
+http://127.0.0.1:8787
+http://127.0.0.1:8787/v1
+```
+
 ## Features
 
 - Text and OpenAI-style image content parts are accepted. User image parts are forwarded to Codex as image inputs.
+- SillyTavern `name` fields are preserved as speaker prefixes, including named example dialogue messages.
 - `reasoning_effort` / `effort` are forwarded when supported by the selected Codex model.
 - `/v1/models` includes basic metadata for SillyTavern UI hints: reasoning-effort support, supported reasoning efforts, vision support, and `function_call: false`.
 - OpenAI tools/functions are rejected intentionally. Codex app-server dynamic tools use a different JSON-RPC request flow.
@@ -49,7 +57,9 @@ In SillyTavern, use Chat Completion with a Custom OpenAI-compatible endpoint and
 ## Endpoints
 
 - `GET /v1/models`
+- `GET /models`
 - `POST /v1/chat/completions`
+- `POST /chat/completions`
 - `GET /bridge/status`
 - `POST /bridge/login/start`
 - `POST /bridge/login/cancel`
@@ -79,7 +89,7 @@ npm start -- --host 127.0.0.1 --port 8787
 
 ## Runtime Model
 
-The bridge starts fresh Codex threads per request, maps SillyTavern `system` messages into Codex `baseInstructions`, injects non-system message history, and starts turns with `approvalPolicy: "never"` plus read-only sandboxing.
+The bridge starts fresh Codex threads per request, maps leading SillyTavern `system` messages into Codex `baseInstructions`, carries later unnamed `system` messages as developer instructions, preserves named example dialogue as transcript turns, injects non-system message history, and starts turns with `approvalPolicy: "never"` plus read-only sandboxing.
 
 It rejects tool/function request shapes and streams only `agentMessage` final-answer text when Codex phase metadata is available.
 
@@ -88,6 +98,8 @@ The HTTP API has no built-in authentication and uses permissive CORS for local S
 ## Maintainer Notes
 
 For notes on the OpenAI/Codex policy posture, see [`docs/sillytavern-maintainer-notes.md`](docs/sillytavern-maintainer-notes.md).
+
+For SillyTavern prompt-compatibility notes, see [`docs/sillytavern-compatibility-notes.md`](docs/sillytavern-compatibility-notes.md).
 
 ## License
 

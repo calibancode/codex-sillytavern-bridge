@@ -51,12 +51,12 @@ export function createBridgeHttpServer(bridge: CodexBridge, config: BridgeConfig
         return;
       }
 
-      if (req.method === "GET" && url.pathname === "/v1/models") {
+      if (req.method === "GET" && isModelsPath(url.pathname)) {
         sendJson(res, 200, await bridge.openAiModels());
         return;
       }
 
-      if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
+      if (req.method === "POST" && isChatCompletionsPath(url.pathname)) {
         const body = await readJson(req, config.maxBodyBytes, false);
         if (isRecord(body) && body.stream === true) {
           await streamChatCompletion(req, res, bridge, body);
@@ -153,4 +153,12 @@ function setCommonHeaders(res: ServerResponse): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function isModelsPath(pathname: string): boolean {
+  return pathname === "/v1/models" || pathname === "/models";
+}
+
+export function isChatCompletionsPath(pathname: string): boolean {
+  return pathname === "/v1/chat/completions" || pathname === "/chat/completions";
 }
