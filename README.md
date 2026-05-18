@@ -44,6 +44,7 @@ http://127.0.0.1:8787/v1
 - Text and OpenAI-style image content parts are accepted. User image parts are forwarded to Codex as image inputs.
 - SillyTavern `name` fields are preserved as speaker prefixes, including named example dialogue messages.
 - `reasoning_effort` / `effort` are forwarded when supported by the selected Codex model.
+- Codex service tiers can be selected through SillyTavern Custom Additional Parameters, for example `service_tier: priority`.
 - `/v1/models` includes basic metadata for SillyTavern UI hints: reasoning-effort support, supported reasoning efforts, vision support, and `function_call: false`.
 - OpenAI tools/functions are rejected intentionally. Codex app-server dynamic tools use a different JSON-RPC request flow.
 

@@ -111,21 +111,7 @@ export class CodexBridge {
 
     return {
       object: "list",
-      data: this.models.map((model) => ({
-        id: model.id,
-        object: "model",
-        owned_by: "openai",
-        input_modalities: model.inputModalities ?? ["text"],
-        supported_features: model.supportedReasoningEfforts?.length ? ["reasoning_effort"] : [],
-        metadata: {
-          reasoning: false,
-          reasoning_effort: Boolean(model.supportedReasoningEfforts?.length),
-          supported_reasoning_efforts: model.supportedReasoningEfforts?.map((effort) => effort.reasoningEffort) ?? [],
-          visible_reasoning: false,
-          vision: (model.inputModalities ?? []).includes("image"),
-          function_call: false,
-        },
-      })),
+      data: this.models.map((model) => openAiModelEntry(model)),
     };
   }
 
@@ -172,6 +158,7 @@ export class CodexBridge {
     const model = this.selectModel(request.model);
     const effort = this.selectEffort(model, request);
     const summary = this.selectReasoningSummary(request);
+    const serviceTier = selectServiceTier(request);
     const includeReasoning = summary !== null && summary !== "none";
     const outputSchema = this.selectOutputSchema(request);
     const completionId = `chatcmpl-${randomUUID()}`;
@@ -182,6 +169,7 @@ export class CodexBridge {
       approvalPolicy: "never",
       sandbox: "read-only",
       serviceName: this.config.serviceName,
+      serviceTier,
       baseInstructions: preparedPrompt.baseInstructions,
       developerInstructions: preparedPrompt.developerInstructions,
       personality: null,
@@ -339,6 +327,7 @@ export class CodexBridge {
           networkAccess: false,
         },
         model: model.id,
+        serviceTier,
         effort,
         summary,
         outputSchema,
@@ -510,13 +499,7 @@ export class CodexBridge {
   }
 
   private selectEffort(model: CodexModel, request: OpenAiChatRequest): string | null {
-    const requested = normalizeReasoningEffort(
-      typeof request.reasoning_effort === "string"
-        ? request.reasoning_effort
-        : typeof request.effort === "string"
-          ? request.effort
-          : reasoningObjectString(request.reasoning, "effort"),
-    );
+    const requested = requestedReasoningEffort(request);
     const supported = new Set((model.supportedReasoningEfforts ?? []).map((effort) => effort.reasoningEffort));
 
     if (requested && (supported.size === 0 || supported.has(requested))) return requested;
@@ -530,6 +513,10 @@ export class CodexBridge {
     if (isReasoningSummary(requested)) return requested;
     if (request.include_reasoning === true) return "concise";
     if (request.include_reasoning === false) return "none";
+
+    const effort = requestedReasoningEffort(request);
+    if (effort && effort !== "none") return "concise";
+
     return null;
   }
 
@@ -567,6 +554,8 @@ export class CodexBridge {
       "effort",
       "include_reasoning",
       "reasoning",
+      "service_tier",
+      "serviceTier",
       "response_format",
       "verbosity",
       "max_tokens",
@@ -603,6 +592,24 @@ function accountSummary(account: CodexAccount | null): AccountSummary | null {
   return { type: account.type };
 }
 
+function openAiModelEntry(model: CodexModel): unknown {
+  return {
+    id: model.id,
+    object: "model",
+    owned_by: "openai",
+    input_modalities: model.inputModalities ?? ["text"],
+    supported_features: model.supportedReasoningEfforts?.length ? ["reasoning_effort"] : [],
+    metadata: {
+      reasoning: false,
+      reasoning_effort: Boolean(model.supportedReasoningEfforts?.length),
+      supported_reasoning_efforts: model.supportedReasoningEfforts?.map((effort) => effort.reasoningEffort) ?? [],
+      visible_reasoning: false,
+      vision: (model.inputModalities ?? []).includes("image"),
+      function_call: false,
+    },
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -624,6 +631,29 @@ function reasoningObjectString(reasoning: unknown, key: string): string | null {
   if (!isRecord(reasoning)) return null;
   const value = reasoning[key];
   return typeof value === "string" ? value : null;
+}
+
+function requestedReasoningEffort(request: OpenAiChatRequest): string | null {
+  return normalizeReasoningEffort(
+    typeof request.reasoning_effort === "string"
+      ? request.reasoning_effort
+      : typeof request.effort === "string"
+        ? request.effort
+        : reasoningObjectString(request.reasoning, "effort"),
+  );
+}
+
+function selectServiceTier(request: OpenAiChatRequest): string | null {
+  const requested = typeof request.serviceTier === "string"
+    ? request.serviceTier
+    : typeof request.service_tier === "string"
+      ? request.service_tier
+      : null;
+
+  const normalized = requested?.trim();
+  if (!normalized) return null;
+  if (normalized === "fast") return "priority";
+  return normalized;
 }
 
 function normalizeReasoningEffort(effort: string | null): string | null {

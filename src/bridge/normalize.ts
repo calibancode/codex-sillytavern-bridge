@@ -35,6 +35,8 @@ export type OpenAiChatRequest = {
   effort?: string;
   include_reasoning?: boolean;
   reasoning?: unknown;
+  service_tier?: string;
+  serviceTier?: string;
   response_format?: unknown;
   [key: string]: unknown;
 };

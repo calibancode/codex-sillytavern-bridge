@@ -20,6 +20,16 @@ The forwarded body is mostly:
 
 The bridge intentionally consumes the compatible subset and lets Codex own generation behavior instead of pretending every sampler can be mapped.
 
+For Codex-specific knobs that SillyTavern does not model directly, use the Custom endpoint's Additional Parameters YAML. The bridge consumes these fields when present:
+
+```yaml
+service_tier: priority
+include_reasoning: true
+reasoning_effort: medium
+```
+
+`service_tier: fast` is also accepted and normalized to Codex's current `priority` request value. Keeping the model id as the real Codex model, for example `gpt-5.5`, preserves SillyTavern's model-gated reasoning-effort forwarding.
+
 ## Prompt Semantics
 
 SillyTavern uses the OpenAI `name` field for prompt semantics that are easy to lose in a bridge:
