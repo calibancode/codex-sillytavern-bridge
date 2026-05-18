@@ -2,12 +2,10 @@
 
 Local OpenAI-compatible HTTP bridge from SillyTavern to `codex app-server`.
 
-Run it locally, point SillyTavern at it, and it translates OpenAI-style chat completion requests into Codex app-server turns.
-
 ## Requirements
 
 - Node.js 18+
-- A working local `codex` CLI installation
+- A working `codex` CLI
 - Codex already authenticated locally
 
 ## Run
@@ -18,89 +16,85 @@ npm run build
 npm start
 ```
 
-Default endpoint:
+Default base URL:
 
 ```text
 http://127.0.0.1:8787
 ```
 
-To force localhost binding through npm args:
+## SillyTavern Setup
 
-```bash
-npm start -- --localhost
-```
+Use Chat Completion with a Custom OpenAI-compatible endpoint.
 
-In SillyTavern, use Chat Completion with a Custom OpenAI-compatible endpoint and point it at the bridge URL. Use prompt post-processing `none` for the first test.
-
-SillyTavern appends `/chat/completions` and `/models` to its Custom endpoint URL, so either of these base URLs works:
+Either base URL works:
 
 ```text
 http://127.0.0.1:8787
 http://127.0.0.1:8787/v1
 ```
 
-## Features
+Use prompt post-processing `none` for the first test.
 
-- Text and OpenAI-style image content parts are accepted. User image parts are forwarded to Codex as image inputs.
-- SillyTavern `name` fields are preserved as speaker prefixes, including named example dialogue messages.
-- `reasoning_effort` / `effort` are forwarded when supported by the selected Codex model.
-- Codex service tiers can be selected through SillyTavern Custom Additional Parameters, for example `service_tier: priority`.
-- `/v1/models` includes basic metadata for SillyTavern UI hints: reasoning-effort support, supported reasoning efforts, vision support, and `function_call: false`.
-- OpenAI tools/functions are rejected intentionally. Codex app-server dynamic tools use a different JSON-RPC request flow.
+## Additional Parameters
 
-## Limits
+SillyTavern Custom endpoint "Additional Parameters" accepts YAML. The bridge reads:
 
-- No persistent SillyTavern chat-to-Codex thread mapping. Each request starts a fresh ephemeral Codex thread.
-- No visible reasoning blocks unless Codex app-server emits reasoning events. Current Codex app-server builds may accept reasoning effort without emitting visible reasoning summaries.
-- No OpenAI tool/function support.
-- No built-in HTTP authentication.
+```yaml
+service_tier: priority
+include_reasoning: true
+reasoning_effort: medium
+```
 
-## Endpoints
+- `service_tier` is passed to Codex as `serviceTier`.
+- `service_tier: fast` is accepted as an alias for `priority`.
+- `include_reasoning` requests reasoning chunks for SillyTavern to display.
+- `reasoning_effort` can also come from SillyTavern's built-in Reasoning Effort control when SillyTavern forwards it for the selected model.
 
-- `GET /v1/models`
+## Behavior
+
+- Starts a fresh ephemeral Codex thread per request.
+- Sends turns with `approvalPolicy: "never"` and read-only sandboxing.
+- Preserves SillyTavern `name` fields as speaker prefixes.
+- Converts named example dialogue into transcript turns.
+- Forwards user image parts to Codex.
+- Rejects OpenAI tools/functions.
+
+## Useful Endpoints
+
 - `GET /models`
-- `POST /v1/chat/completions`
+- `GET /v1/models`
 - `POST /chat/completions`
+- `POST /v1/chat/completions`
 - `GET /bridge/status`
 - `POST /bridge/login/start`
-- `POST /bridge/login/cancel`
 - `GET /bridge/rate-limits`
-- `POST /bridge/logout`
 
 ## Configuration
 
 - `BRIDGE_HOST`, default `127.0.0.1`
 - `BRIDGE_PORT`, default `8787`
-- CLI args override env: `--localhost`, `--host <host>`, `--port <port>`
 - `CODEX_COMMAND`, default `codex`
 - `CODEX_APP_SERVER_ARGS`, default `app-server`
 - `BRIDGE_DEFAULT_MODEL`, optional model id override
 - `BRIDGE_REASONING_EFFORT`, default `low`
-- `BRIDGE_CONTINUE_NUDGE`, synthetic continue prompt
-- `BRIDGE_FIRST_REPLY_NUDGE`, synthetic first assistant reply prompt when ST sends only system messages
-- `BRIDGE_REQUEST_TIMEOUT_MS`, default `30000`
 - `BRIDGE_GENERATION_TIMEOUT_MS`, default `600000`
-- `BRIDGE_MAX_BODY_BYTES`, default `16777216`
 
-CLI args override env for host/port:
+Host and port can also be set with CLI args:
 
 ```bash
 npm start -- --host 127.0.0.1 --port 8787
 ```
 
-## Runtime Model
+## Limits
 
-The bridge starts fresh Codex threads per request, maps leading SillyTavern `system` messages into Codex `baseInstructions`, carries later unnamed `system` messages as developer instructions, preserves named example dialogue as transcript turns, injects non-system message history, and starts turns with `approvalPolicy: "never"` plus read-only sandboxing.
+- No persistent SillyTavern chat-to-Codex thread mapping.
+- No OpenAI tool/function support.
+- No built-in HTTP authentication.
 
-It rejects tool/function request shapes and streams only `agentMessage` final-answer text when Codex phase metadata is available.
+## More Notes
 
-The HTTP API has no built-in authentication and uses permissive CORS for local SillyTavern compatibility. Keep the default loopback binding unless you are putting your own trusted network/auth controls in front of it.
-
-## Maintainer Notes
-
-For notes on the OpenAI/Codex policy posture, see [`docs/sillytavern-maintainer-notes.md`](docs/sillytavern-maintainer-notes.md).
-
-For SillyTavern prompt-compatibility notes, see [`docs/sillytavern-compatibility-notes.md`](docs/sillytavern-compatibility-notes.md).
+- [SillyTavern compatibility notes](docs/sillytavern-compatibility-notes.md)
+- [Maintainer notes](docs/sillytavern-maintainer-notes.md)
 
 ## License
 
