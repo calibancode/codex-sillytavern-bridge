@@ -39,6 +39,45 @@ type TurnCompletion = {
   error?: { message?: string; additionalDetails?: string | null } | null;
 };
 
+type GenerationDebug = {
+  at: string;
+  id: string;
+  incoming: {
+    model: string | null;
+    stream: boolean | null;
+    includeReasoning: boolean | null;
+    reasoningEffort: string | null;
+    effort: string | null;
+    reasoningSummary: string | null;
+    nestedReasoningSummary: string | null;
+    serviceTier: string | null;
+  };
+  selected: {
+    model: string;
+    effort: string | null;
+    summary: string | null;
+    includeReasoning: boolean;
+    serviceTier: string | null;
+  };
+  events: {
+    agentMessageDelta: number;
+    agentMessageChars: number;
+    reasoningSummaryTextDelta: number;
+    reasoningSummaryChars: number;
+    reasoningSummaryPartAdded: number;
+    reasoningTextDelta: number;
+    reasoningTextChars: number;
+    reasoningItemCompleted: number;
+    reasoningItemCompletedChars: number;
+  };
+  outcome?: {
+    finishReason: string;
+    contentChars: number;
+    reasoningChars: number;
+    turnFailure: string | null;
+  };
+};
+
 export type BridgeStatus = {
   codexProcessAlive: boolean;
   initialized: boolean;
@@ -67,6 +106,7 @@ export class CodexBridge {
   private models: CodexModel[] = [];
   private requirements: ConfigRequirements | null = null;
   private pendingLoginId: string | null = null;
+  private lastGenerationDebug: GenerationDebug | null = null;
 
   constructor(private readonly config: BridgeConfig) {
     this.rpc = new CodexRpc({
@@ -146,6 +186,10 @@ export class CodexBridge {
     return this.rpc.request("account/rateLimits/read", {});
   }
 
+  debugLastGeneration(): GenerationDebug | null {
+    return this.lastGenerationDebug;
+  }
+
   async generate(body: unknown, options: GenerateOptions = {}): Promise<ChatCompletionResult> {
     await this.ensureReady();
     this.validateSafetyRequirements();
@@ -163,6 +207,14 @@ export class CodexBridge {
     const outputSchema = this.selectOutputSchema(request);
     const completionId = `chatcmpl-${randomUUID()}`;
     const created = Math.floor(Date.now() / 1000);
+    const generationDebug = createGenerationDebug(completionId, request, {
+      model: model.id,
+      effort,
+      summary,
+      includeReasoning,
+      serviceTier,
+    });
+    this.lastGenerationDebug = generationDebug;
 
     const thread = await this.rpc.request<{ thread: { id: string } }>("thread/start", {
       model: model.id,
@@ -241,13 +293,19 @@ export class CodexBridge {
       if (notification.method === "item/agentMessage/delta") {
         const itemId = typeof params.itemId === "string" ? params.itemId : null;
         const delta = typeof params.delta === "string" ? params.delta : null;
-        if (itemId && delta) emitDelta(itemId, delta);
+        if (itemId && delta) {
+          generationDebug.events.agentMessageDelta += 1;
+          generationDebug.events.agentMessageChars += delta.length;
+          emitDelta(itemId, delta);
+        }
         return;
       }
 
       if (includeReasoning && notification.method === "item/reasoning/summaryTextDelta") {
         const delta = typeof params.delta === "string" ? params.delta : null;
         if (delta) {
+          generationDebug.events.reasoningSummaryTextDelta += 1;
+          generationDebug.events.reasoningSummaryChars += delta.length;
           hadReasoningDelta = true;
           reasoningChunks.push(delta);
           options.onReasoningDelta?.(delta);
@@ -256,6 +314,7 @@ export class CodexBridge {
       }
 
       if (includeReasoning && notification.method === "item/reasoning/summaryPartAdded") {
+        generationDebug.events.reasoningSummaryPartAdded += 1;
         if (reasoningChunks.length > 0 && !reasoningChunks.at(-1)?.endsWith("\n")) {
           reasoningChunks.push("\n\n");
           options.onReasoningDelta?.("\n\n");
@@ -266,6 +325,8 @@ export class CodexBridge {
       if (includeReasoning && notification.method === "item/reasoning/textDelta") {
         const delta = typeof params.delta === "string" ? params.delta : null;
         if (delta) {
+          generationDebug.events.reasoningTextDelta += 1;
+          generationDebug.events.reasoningTextChars += delta.length;
           hadReasoningDelta = true;
           reasoningChunks.push(delta);
           options.onReasoningDelta?.(delta);
@@ -286,6 +347,8 @@ export class CodexBridge {
 
       if (includeReasoning && notification.method === "item/completed" && isRecord(params.item) && params.item.type === "reasoning") {
         const summary = reasoningItemText(params.item.summary) || reasoningItemText(params.item.content);
+        generationDebug.events.reasoningItemCompleted += 1;
+        generationDebug.events.reasoningItemCompletedChars += summary.length;
         if (!hadReasoningDelta && summary) {
           hadReasoningDelta = true;
           reasoningChunks.push(summary);
@@ -372,15 +435,32 @@ export class CodexBridge {
     }
 
     if (turnFailure) {
+      generationDebug.outcome = {
+        finishReason,
+        contentChars: chunks.join("").length || fallbackTextFromCompletedItems(itemText, itemPhases).length,
+        reasoningChars: reasoningChunks.join("").length,
+        turnFailure,
+      };
+      this.logReasoningDebug(generationDebug);
       throw new BridgeHttpError(500, "codex_turn_failed", turnFailure);
     }
+
+    const content = chunks.join("") || fallbackTextFromCompletedItems(itemText, itemPhases);
+    const reasoning = reasoningChunks.join("") || undefined;
+    generationDebug.outcome = {
+      finishReason,
+      contentChars: content.length,
+      reasoningChars: reasoning?.length ?? 0,
+      turnFailure: null,
+    };
+    this.logReasoningDebug(generationDebug);
 
     return {
       id: completionId,
       model: model.id,
       created,
-      content: chunks.join("") || fallbackTextFromCompletedItems(itemText, itemPhases),
-      reasoning: reasoningChunks.join("") || undefined,
+      content,
+      reasoning,
       finishReason,
     };
   }
@@ -501,7 +581,9 @@ export class CodexBridge {
   private selectEffort(model: CodexModel, request: OpenAiChatRequest): string | null {
     const requested = requestedReasoningEffort(request);
     const supported = new Set((model.supportedReasoningEfforts ?? []).map((effort) => effort.reasoningEffort));
+    const forced = normalizeReasoningEffort(this.config.forcedReasoningEffort);
 
+    if (forced && (supported.size === 0 || supported.has(forced))) return forced;
     if (requested && (supported.size === 0 || supported.has(requested))) return requested;
     if (supported.has(this.config.defaultReasoningEffort)) return this.config.defaultReasoningEffort;
     if (model.defaultReasoningEffort) return model.defaultReasoningEffort;
@@ -509,10 +591,11 @@ export class CodexBridge {
   }
 
   private selectReasoningSummary(request: OpenAiChatRequest): string | null {
-    const requested = reasoningObjectString(request.reasoning, "summary");
+    const requested = requestedReasoningSummary(request);
     if (isReasoningSummary(requested)) return requested;
-    if (request.include_reasoning === true) return "concise";
     if (request.include_reasoning === false) return "none";
+    if (this.config.defaultReasoningSummary) return this.config.defaultReasoningSummary;
+    if (request.include_reasoning === true) return "concise";
 
     const effort = requestedReasoningEffort(request);
     if (effort && effort !== "none") return "concise";
@@ -553,6 +636,10 @@ export class CodexBridge {
       "reasoning_effort",
       "effort",
       "include_reasoning",
+      "reasoning_summary",
+      "reasoningSummary",
+      "model_reasoning_summary",
+      "modelReasoningSummary",
       "reasoning",
       "service_tier",
       "serviceTier",
@@ -574,6 +661,11 @@ export class CodexBridge {
     for (const field of Object.keys(request)) {
       if (!supported.has(field)) console.warn(`Ignoring unsupported OpenAI chat field: ${field}`);
     }
+  }
+
+  private logReasoningDebug(debug: GenerationDebug): void {
+    if (!this.config.debugReasoning) return;
+    console.error(`[bridge reasoning debug] ${JSON.stringify(debug)}`);
   }
 }
 
@@ -633,13 +725,23 @@ function reasoningObjectString(reasoning: unknown, key: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function requestedReasoningSummary(request: OpenAiChatRequest): string | null {
+  const requested =
+    reasoningObjectString(request.reasoning, "summary") ??
+    stringField(request.reasoning_summary) ??
+    stringField(request.reasoningSummary) ??
+    stringField(request.model_reasoning_summary) ??
+    stringField(request.modelReasoningSummary);
+
+  return requested?.trim().toLowerCase() ?? null;
+}
+
 function requestedReasoningEffort(request: OpenAiChatRequest): string | null {
   return normalizeReasoningEffort(
-    typeof request.reasoning_effort === "string"
-      ? request.reasoning_effort
-      : typeof request.effort === "string"
-        ? request.effort
-        : reasoningObjectString(request.reasoning, "effort"),
+    typeof request.effort === "string"
+      ? request.effort
+      : reasoningObjectString(request.reasoning, "effort") ??
+          (typeof request.reasoning_effort === "string" ? request.reasoning_effort : null),
   );
 }
 
@@ -657,11 +759,50 @@ function selectServiceTier(request: OpenAiChatRequest): string | null {
 }
 
 function normalizeReasoningEffort(effort: string | null): string | null {
-  if (effort === "min") return "minimal";
-  if (effort === "max") return "high";
-  return effort;
+  const normalized = effort?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "min" || normalized === "minimal") return "low";
+  if (normalized === "max") return "xhigh";
+  return normalized;
 }
 
 function isReasoningSummary(value: string | null): value is string {
   return value === "auto" || value === "concise" || value === "detailed" || value === "none";
+}
+
+function createGenerationDebug(
+  id: string,
+  request: OpenAiChatRequest,
+  selected: GenerationDebug["selected"],
+): GenerationDebug {
+  return {
+    at: new Date().toISOString(),
+    id,
+    incoming: {
+      model: stringField(request.model),
+      stream: typeof request.stream === "boolean" ? request.stream : null,
+      includeReasoning: typeof request.include_reasoning === "boolean" ? request.include_reasoning : null,
+      reasoningEffort: stringField(request.reasoning_effort),
+      effort: stringField(request.effort),
+      reasoningSummary: requestedReasoningSummary(request),
+      nestedReasoningSummary: reasoningObjectString(request.reasoning, "summary"),
+      serviceTier: stringField(request.serviceTier) ?? stringField(request.service_tier),
+    },
+    selected,
+    events: {
+      agentMessageDelta: 0,
+      agentMessageChars: 0,
+      reasoningSummaryTextDelta: 0,
+      reasoningSummaryChars: 0,
+      reasoningSummaryPartAdded: 0,
+      reasoningTextDelta: 0,
+      reasoningTextChars: 0,
+      reasoningItemCompleted: 0,
+      reasoningItemCompletedChars: 0,
+    },
+  };
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }

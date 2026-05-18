@@ -42,13 +42,21 @@ SillyTavern Custom endpoint "Additional Parameters" accepts YAML. The bridge rea
 ```yaml
 service_tier: priority
 include_reasoning: true
+reasoning_summary: detailed
 reasoning_effort: medium
+effort: xhigh
 ```
 
 - `service_tier` is passed to Codex as `serviceTier`.
 - `service_tier: fast` is accepted as an alias for `priority`.
 - `include_reasoning` requests reasoning chunks for SillyTavern to display.
+- `reasoning_summary` can be `auto`, `concise`, `detailed`, or `none`.
 - `reasoning_effort` can also come from SillyTavern's built-in Reasoning Effort control when SillyTavern forwards it for the selected model.
+- `effort` overrides `reasoning_effort`; use it for `xhigh`.
+
+For SillyTavern to show streamed reasoning, its Request model reasoning toggle must be on too.
+
+Reasoning summaries are wired through, but as of May 18, 2026, Codex did not return visible summary text in local testing. The bridge requested `summary: detailed` with `effort: xhigh`; Codex emitted an empty reasoning item.
 
 ## Behavior
 
@@ -68,6 +76,9 @@ reasoning_effort: medium
 - `GET /bridge/status`
 - `POST /bridge/login/start`
 - `GET /bridge/rate-limits`
+- `GET /bridge/debug/last-generation`
+
+The debug endpoint reports parameter selection and event counts only. It does not include prompt, reply, or reasoning text.
 
 ## Configuration
 
@@ -77,6 +88,9 @@ reasoning_effort: medium
 - `CODEX_APP_SERVER_ARGS`, default `app-server`
 - `BRIDGE_DEFAULT_MODEL`, optional model id override
 - `BRIDGE_REASONING_EFFORT`, default `low`
+- `BRIDGE_FORCE_REASONING_EFFORT`, optional override; use `xhigh` to force maximum
+- `BRIDGE_REASONING_SUMMARY`, optional default: `auto`, `concise`, `detailed`, or `none`
+- `BRIDGE_DEBUG_REASONING`, default `false`; logs sanitized reasoning event counts
 - `BRIDGE_GENERATION_TIMEOUT_MS`, default `600000`
 
 Host and port can also be set with CLI args:

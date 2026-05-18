@@ -34,6 +34,10 @@ export type OpenAiChatRequest = {
   reasoning_effort?: string;
   effort?: string;
   include_reasoning?: boolean;
+  reasoning_summary?: string;
+  reasoningSummary?: string;
+  model_reasoning_summary?: string;
+  modelReasoningSummary?: string;
   reasoning?: unknown;
   service_tier?: string;
   serviceTier?: string;

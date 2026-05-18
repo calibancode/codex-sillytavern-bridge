@@ -30,6 +30,12 @@ reasoning_effort: medium
 
 `service_tier: fast` is also accepted and normalized to Codex's current `priority` request value. Keeping the model id as the real Codex model, for example `gpt-5.5`, preserves SillyTavern's model-gated reasoning-effort forwarding.
 
+## Reasoning Summaries
+
+Codex app-server has reasoning summary events, and the bridge requests and forwards them when reasoning is enabled. In testing on May 18, 2026, OpenAI/Codex did not populate those summaries for `gpt-5.5`: the bridge sent `summary: detailed` and `effort: xhigh`, then received a completed reasoning item with zero summary characters.
+
+So the plumbing is present, but there may be no reasoning text to display. If Codex starts filling these summaries later, the bridge should pass them through without a SillyTavern-side change.
+
 ## Prompt Semantics
 
 SillyTavern uses the OpenAI `name` field for prompt semantics that are easy to lose in a bridge:

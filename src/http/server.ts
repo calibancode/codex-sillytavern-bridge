@@ -34,6 +34,11 @@ export function createBridgeHttpServer(bridge: CodexBridge, config: BridgeConfig
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/bridge/debug/last-generation") {
+        sendJson(res, 200, bridge.debugLastGeneration() ?? { ok: false, message: "No generation has completed since bridge startup." });
+        return;
+      }
+
       if (req.method === "POST" && url.pathname === "/bridge/login/start") {
         sendJson(res, 200, await bridge.loginStart());
         return;

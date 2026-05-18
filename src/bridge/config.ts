@@ -11,6 +11,7 @@ export type BridgeConfig = {
   codexArgs: string[];
   defaultModel: string | null;
   defaultReasoningEffort: string;
+  forcedReasoningEffort: string | null;
   continueNudge: string;
   firstReplyNudge: string;
   requestTimeoutMs: number;
@@ -18,6 +19,8 @@ export type BridgeConfig = {
   maxBodyBytes: number;
   logUnsupportedFields: boolean;
   serviceName: string;
+  defaultReasoningSummary: string | null;
+  debugReasoning: boolean;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv.slice(2)): BridgeConfig {
@@ -29,7 +32,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     codexCommand: env.CODEX_COMMAND ?? "codex",
     codexArgs: splitArgs(env.CODEX_APP_SERVER_ARGS) ?? ["app-server"],
     defaultModel: env.BRIDGE_DEFAULT_MODEL ?? null,
-    defaultReasoningEffort: env.BRIDGE_REASONING_EFFORT ?? "low",
+    defaultReasoningEffort: reasoningEffortFromEnv(env.BRIDGE_REASONING_EFFORT) ?? "low",
+    forcedReasoningEffort: reasoningEffortFromEnv(env.BRIDGE_FORCE_REASONING_EFFORT),
     continueNudge: env.BRIDGE_CONTINUE_NUDGE ?? DEFAULT_CONTINUE_NUDGE,
     firstReplyNudge: env.BRIDGE_FIRST_REPLY_NUDGE ?? DEFAULT_FIRST_REPLY_NUDGE,
     requestTimeoutMs: numberFromEnv(env.BRIDGE_REQUEST_TIMEOUT_MS, 30_000),
@@ -37,6 +41,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     maxBodyBytes: numberFromEnv(env.BRIDGE_MAX_BODY_BYTES, 16 * 1024 * 1024),
     logUnsupportedFields: booleanFromEnv(env.BRIDGE_LOG_UNSUPPORTED_FIELDS, false),
     serviceName: env.BRIDGE_SERVICE_NAME ?? "codex_sillytavern_bridge",
+    defaultReasoningSummary: reasoningSummaryFromEnv(env.BRIDGE_REASONING_SUMMARY),
+    debugReasoning: booleanFromEnv(env.BRIDGE_DEBUG_REASONING, false),
   };
 }
 
@@ -94,6 +100,20 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
 function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
   if (value == null) return fallback;
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
+}
+
+function reasoningSummaryFromEnv(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  return ["auto", "concise", "detailed", "none"].includes(normalized) ? normalized : null;
+}
+
+function reasoningEffortFromEnv(value: string | undefined): string | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "min" || normalized === "minimal") return "low";
+  if (normalized === "max") return "xhigh";
+  return normalized;
 }
 
 function splitArgs(value: string | undefined): string[] | null {
